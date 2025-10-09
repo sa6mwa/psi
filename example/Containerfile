@@ -1,0 +1,6 @@
+FROM scratch
+ADD example /app/example
+WORKDIR /var/www/cache
+WORKDIR /var/www/site
+WORKDIR /app
+ENTRYPOINT [ "/app/example" ]

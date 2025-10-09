@@ -1,2 +1,2 @@
 # psi
-psi is pkt.systems init Go package for FROM scratch container images w/o dedicated init.
+`psi` is **p**kt.**s**ystems **i**nit PID1 Go package for `FROM scratch` container images w/o dedicated `init`.
