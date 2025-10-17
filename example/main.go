@@ -7,7 +7,7 @@ import (
 	_ "embed"
 
 	"pkt.systems/emrun"
-	"pkt.systems/logport/adapters/zerologger"
+	"pkt.systems/logport/adapters/psl"
 	"pkt.systems/psi"
 )
 
@@ -19,7 +19,7 @@ func main() {
 }
 
 func submain(ctx context.Context) int {
-	l := zerologger.New(os.Stdout).With("app", "example")
+	l := psl.New(os.Stdout).With("app", "example")
 	l.Debug("Starting embedded executable")
 	if err := emrun.RunIO(context.Background(), nil, os.Stdout, embedded); err != nil {
 		l.Error("Embedded executable failed", "error", err)
