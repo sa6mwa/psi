@@ -24,6 +24,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"pkt.systems/psi/internal/istty"
+	"pkt.systems/psi/internal/ttygrp"
 )
 
 const childEnvKey = "PSI_CHILD"
@@ -83,6 +86,7 @@ func runAsInit() {
 		log.Fatalf("psi: failed to start child: %v", err)
 	}
 	childPID := cmd.Process.Pid
+	_ = setForegroundProcessGroup(os.Stdin, childPID)
 	// Channel that yields the child's exit code once reaped.
 	done := make(chan int, 1)
 	go func() {
@@ -256,6 +260,20 @@ func killTimerC(t *time.Timer) <-chan time.Time {
 		return never
 	}
 	return t.C
+}
+
+// maybeSetForegroundProcessGroup sets pgid as the foreground process group for
+// the controlling TTY attached to f (if f is a TTY). It returns a restore
+// function when the foreground was changed; otherwise nil.
+func setForegroundProcessGroup(f *os.File, pgid int) error {
+	if f == nil {
+		return nil
+	}
+	fd := int(f.Fd())
+	if fd < 0 || !istty.IsTerminal(fd) {
+		return nil
+	}
+	return ttygrp.SetForegroundPgrp(fd, pgid)
 }
 
 // Optional helpers for testing / diagnostics...

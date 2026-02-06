@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/creack/pty"
+	"pkt.systems/psi/internal/ttygrp"
 )
 
 const (
@@ -217,6 +220,17 @@ func TestDrainZombiesNonBlock(t *testing.T) {
 	}
 }
 
+func TestMaybeSetForegroundProcessGroup(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("TTY foreground tests are linux-only")
+	}
+	cmd := helperCommand("tty-foreground")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("tty-foreground helper failed: %v (output=%q)", err, strings.TrimSpace(string(out)))
+	}
+}
+
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv(helperEnv) != "1" {
 		return
@@ -234,6 +248,61 @@ func TestHelperProcess(t *testing.T) {
 				return 23
 			}
 		})
+	case "tty-foreground":
+		if runtime.GOOS != "linux" {
+			fmt.Fprintln(os.Stdout, "skipped: not linux")
+			os.Exit(0)
+		}
+		masterFile, slaveFile, err := pty.Open()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "openpty: %v\n", err)
+			os.Exit(2)
+		}
+		defer masterFile.Close()
+		defer slaveFile.Close()
+		if _, err := syscall.Setsid(); err != nil && !errors.Is(err, syscall.EPERM) {
+			fmt.Fprintf(os.Stderr, "setsid: %v\n", err)
+			os.Exit(2)
+		}
+		if err := ioctlSetInt(int(slaveFile.Fd()), ioctlSetCtty, 0); err != nil {
+			fmt.Fprintf(os.Stderr, "tiocsctty: %v\n", err)
+			os.Exit(2)
+		}
+		selfPGID := syscall.Getpgrp()
+		if err := ttygrp.SetForegroundPgrp(int(slaveFile.Fd()), selfPGID); err != nil {
+			fmt.Fprintf(os.Stderr, "tcsetpgrp (self): %v\n", err)
+			os.Exit(2)
+		}
+		cmd := exec.Command("sh", "-c", "sleep 2")
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = slaveFile, slaveFile, slaveFile
+		if err := cmd.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "start child: %v\n", err)
+			os.Exit(2)
+		}
+		if err := setForegroundProcessGroup(slaveFile, cmd.Process.Pid); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			fmt.Fprintf(os.Stderr, "set foreground: %v\n", err)
+			os.Exit(2)
+		}
+		got, err := ttygrp.GetForegroundPgrp(int(slaveFile.Fd()))
+		if err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			fmt.Fprintf(os.Stderr, "tcgetpgrp (after): %v\n", err)
+			os.Exit(2)
+		}
+		if got != cmd.Process.Pid {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			fmt.Fprintf(os.Stderr, "foreground pgid = %d, want %d\n", got, cmd.Process.Pid)
+			os.Exit(2)
+		}
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		fmt.Fprintln(os.Stdout, "ok")
+		os.Exit(0)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown helper mode %q\n", mode)
 		os.Exit(3)

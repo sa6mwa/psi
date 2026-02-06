@@ -1,4 +1,4 @@
-CNTRCMD = nerdctl
+CNTRCMD = podman
 
 all: build
 
@@ -17,6 +17,10 @@ container:
 .PHONY: run
 run:
 	$(CNTRCMD) run -ti --rm localhost/psi-example:latest
+
+.PHONY: run-interactive
+run-interactive:
+	$(CNTRCMD) run -ti --rm localhost/psi-example:latest interactive
 
 embedded-binary:
 	CGO_ENABLED=0 go build -trimpath -o embedded-binary ./embedded
